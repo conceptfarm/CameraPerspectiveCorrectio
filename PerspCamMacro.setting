@@ -1,0 +1,189 @@
+{
+	Tools = ordered() {
+		PerspCamCorr = MacroOperator {
+			Inputs = ordered() {
+				MainInput1 = InstanceInput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "Input",
+				},
+				MainInput2 = InstanceInput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "Camera",
+				},
+				Input5 = InstanceInput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "CameraAoV",
+					Expression = "self:GetSourceTool(\"Camera\").AoV",
+					Default = 32.06749,
+				},
+				Input6 = InstanceInput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "CameraXRotation",
+					Expression = "self:GetSourceTool(\"Camera\").Transform3DOp.Rotate.X",
+					Default = 35.30917,
+				},
+				Input7 = InstanceInput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "Overscan",
+					Default = 1,
+				},
+				Input8 = InstanceInput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "GetOverscan",
+				},
+				Input9 = InstanceInput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "Rescale",
+					Default = 1,
+				},
+				Input10 = InstanceInput {
+					Disabled = true,
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "SetExpression",
+					Default = 1,
+				},
+				Input1 = InstanceInput {
+					SourceOp = "CornerPositioner1",
+					Source = "TopLeft",
+					DefaultX = 0,
+					DefaultY = 1,
+				},
+				Input2 = InstanceInput {
+					SourceOp = "CornerPositioner1",
+					Source = "TopRight",
+					DefaultX = 1,
+					DefaultY = 1,
+				},
+				Input3 = InstanceInput {
+					SourceOp = "CornerPositioner1",
+					Source = "BottomLeft",
+					DefaultX = 0,
+					DefaultY = 0,
+				},
+				Input4 = InstanceInput {
+					SourceOp = "CornerPositioner1",
+					Source = "BottomRight",
+					DefaultX = 1,
+					DefaultY = 0,
+				},
+				Input11 = InstanceInput {
+					Disabled = true,
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "TopLeftPointHidden",
+					DefaultX = 0,
+					DefaultY = 1.0,
+				},
+				Input12 = InstanceInput {
+					Disabled = true,
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "TopRightPointHidden",
+					DefaultX = 1.0,
+					DefaultY = 1.0,
+				},
+				Input13 = InstanceInput {
+					Disabled = true,
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "BottomLeftPointHidden",
+					DefaultX = 0,
+					DefaultY = 0,
+				},
+				Input14 = InstanceInput {
+					Disabled = true,
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "BottomRightPointHidden",
+					DefaultX = 1,
+					DefaultY = 0,
+				},
+			},
+			Outputs = {
+				MainOutput1 = InstanceOutput {
+					SourceOp = "CornerPositioner1",
+					Source = "Output",
+				},
+				Output1 = InstanceOutput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "TopLeftPoint",
+				},
+				Output2 = InstanceOutput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "TopRightPoint",
+				},
+				Output3 = InstanceOutput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "BottomLeftPoint",
+				},
+				Output4 = InstanceOutput {
+					SourceOp = "CameraPerspectiveCorrection",
+					Source = "BottomRightPoint",
+				},
+			},
+			ViewInfo = GroupInfo { Pos = { 0, 0, }, },
+			Tools = ordered() {
+				CornerPositioner1 = CornerPositioner {
+					CtrlWZoom = false,
+					Inputs = {
+						TopLeft = Input {
+							SourceOp = "CameraPerspectiveCorrection",
+							Source = "TopLeftPoint",
+						},
+						TopRight = Input {
+							SourceOp = "CameraPerspectiveCorrection",
+							Source = "TopRightPoint",
+						},
+						BottomLeft = Input {
+							SourceOp = "CameraPerspectiveCorrection",
+							Source = "BottomLeftPoint",
+						},
+						BottomRight = Input {
+							SourceOp = "CameraPerspectiveCorrection",
+							Source = "BottomRightPoint",
+						},
+						Input = Input {
+							SourceOp = "CameraPerspectiveCorrection",
+							Source = "Output",
+						},
+						StartEndRenderScripts = Input { Value = 1, },
+					},
+					ViewInfo = OperatorInfo { Pos = { 787, 287, }, },
+				},
+				CameraPerspectiveCorrection = Fuse.CameraPerspectiveCorrection {
+					CtrlWZoom = false,
+					NameSet = true,
+					Inputs = {
+						CameraAoV = Input {
+							Value = 90,
+							Expression = "self:GetSourceTool(\"Camera\").AoV",
+						},
+						CameraXRotation = Input {
+							Value = 12,
+							Expression = "self:GetSourceTool(\"Camera\").Transform3DOp.Rotate.X",
+						},
+						Rescale = Input { Value = 1, },
+						SetExpression = Input {
+							Value = 1,
+							Disabled = true,
+						},
+						TopLeftPointHidden = Input {
+							Value = { -0.12929966498205, 1.2711579373029, },
+							Disabled = true,
+						},
+						TopRightPointHidden = Input {
+							Value = { 1.12929966498205, 1.2711579373029, },
+							Disabled = true,
+						},
+						BottomLeftPointHidden = Input {
+							Value = { 5.55111512312578e-017, -0.112711225044825, },
+							Disabled = true,
+						},
+						BottomRightPointHidden = Input {
+							Value = { 1, -0.112711225044825, },
+							Disabled = true,
+						},
+					},
+					ViewInfo = OperatorInfo { Pos = { 608, 288, }, },
+				},
+			},
+		},
+	},
+	ActiveTool = "PerspCamCorr",
+}
