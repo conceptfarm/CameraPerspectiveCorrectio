@@ -17,7 +17,7 @@ respectively
 
 FuRegisterClass("CameraPerspectiveCorrection", CT_Tool, {
 	REGS_Name = "Camera Perspective Correction",
-	REGS_Category = "Fuses\\Blackmagic",
+	REGS_Category = "Fuses\\ConceptFarm",
 	REGS_OpIconString = "CamPrCr",
 	REGS_OpDescription = "Perspective Correction based on 3D camera Input",
 	REG_NoAutoProxy = true,
@@ -26,8 +26,17 @@ FuRegisterClass("CameraPerspectiveCorrection", CT_Tool, {
 	REG_NoBlendCtrls = true,
 	REG_OpNoMask = true,
 	})
-	
+
 function Create()
+	InCamera = self:AddInput("Camera", "Camera", {
+		LINKID_DataType 		= "DataType3D",
+		LINK_Main 				= 2,
+		INP_SendRequest 		= false,
+		INP_Required 			= false,
+		INP_DoNotifyChanged 	= true,
+		INPID_InputControl 		= "ImageControl",
+		})
+		
 	InCameraAoV = self:AddInput("Camera Angle of View", "CameraAoV", {
 		LINKID_DataType 		= "Number",
 		INPID_InputControl 		= "SliderControl",
@@ -37,6 +46,8 @@ function Create()
 		--INP_Passive 			= true,
 		PC_ControlGroup 		= 2,
 		PC_ControlID 			= 3,
+		INP_Default         	= 90,
+		--Expression = "self:GetSourceTool(\"Input2\").AoV",
 		})
 	
 	InCameraXRot = self:AddInput("Camera X Rotation", "CameraXRotation", {
@@ -45,6 +56,7 @@ function Create()
 		INP_DoNotifyChanged = true,
 		INP_ForceNotify		= true,
 		INP_External 		= true,
+		
 		})
 		
 	InOverscan = self:AddInput("Render Overscan", "Overscan", {
@@ -57,13 +69,21 @@ function Create()
 		INP_MaxScale       = 2.0,
 		})		
 	
+	InGetOverscan = self:AddInput("Get Overscan from Camera", "GetOverscan", {
+		LINKID_DataType     = "Number",
+		INPID_InputControl  = "ButtonControl",
+		INP_External        = false,
+		INP_DoNotifyChanged = true,
+		INP_InitialNotify   = false,
+		})
+	
 	InImage = self:AddInput("Input", "Input", {
 		LINKID_DataType 		= "Image",
 		LINK_Main 				= 1,
 		--INP_External 			= true,
 		INP_DoNotifyChanged 	= true,
 		})
-
+		
 	InRescale = self:AddInput("Rescale to full view", "Rescale", {
 		LINKID_DataType     = "Number",
 		INPID_InputControl  = "CheckboxControl",
@@ -78,6 +98,20 @@ function Create()
 		})
 	
 	-- hidden input control, only used to display crosshairs in viewer. Updated by NotifyChanged
+	
+	InSetExpression = self:AddInput("Set Expression", "SetExpression", {
+		LINKID_DataType     	= "Number",
+		INPID_InputControl  	= "CheckboxControl",
+		INP_Default         	= 0,
+		INP_DoNotifyChanged 	= true,
+		IC_Visible          	= false,
+		PC_Visible          	= false,
+		INP_External       	  	= false,	-- don't allow connections
+		INP_Passive        	  	= true,	-- doesn't affect rendering (doesn't invalidate caches)
+		INP_Disabled       	  	= true,	-- prevent user from dragging preview control
+		})	
+	
+	
 	InTLPoint = self:AddInput("Top Left", "TopLeftPointHidden", {
 		LINKID_DataType      = "Point",
 		INPID_InputControl   = "OffsetControl",
@@ -145,13 +179,15 @@ function Create()
 		})
 	OutBRPoint = self:AddOutput("Bottom Right", "BottomRightPoint", {
 		LINKID_DataType = "Point",
-		})		
+		})
+	
+
 		
 end
 
 function GetCameraByName(_name)
 	--tell WHO IS fusion:
-	fusion = eyeon.scriptapp("Fusion", "localhost")
+	fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
 	--..and where we are:
 	comp = fusion:GetCurrentComp()
 	 
@@ -169,6 +205,57 @@ end
 
 function GetCameraAoV(_camera, _time)
 	return _camera.AoV[_time]
+end
+
+-- Fusion 3D rotation is between -180 and 180,
+-- converting to -90 and 90
+function ConvertRotationAngle(theta)
+	local res = theta
+	if theta >= 0 and theta <= 90 then
+		res = theta
+	elseif theta > 90 and theta <=180 then
+		res = theta - 180
+	elseif theta < 0 and theta >= -90 then
+		res = theta
+	elseif theta < -90 then
+		res = 180 + theta
+	end
+	return res
+end
+
+
+function GetOverscanFromCam(aspectRatio)
+	local startFrame = self.Comp.GlobalStart
+	local endFrame = self.Comp.GlobalEnd
+	local maxRot = 0
+	local maxRotFrame = 0
+
+	--self.Comp:Execute("a =  comp.ActiveTool")
+	--local this = self.Comp:Execute("return a")
+	--dump(this.CameraXRotation)
+	
+	--local frameList = this.CameraXRotation:GetKeyFrames()
+	--for i=0,(#frameList), 1 do
+	--	local xrot = this.CameraXRotation[frameList[i]]
+	--	if math.abs(xrot) > maxRot then 
+	--		maxRot = math.abs(xrot) 
+	--		maxRotFrame = frameList[i]
+	--	end
+	--end
+
+		
+	for i = 0, (endFrame - startFrame - 1), 1 do
+		local xrot = ConvertRotationAngle(InCameraXRot:GetSource(startFrame + i).Value)
+		if math.abs(xrot) > maxRot then 
+			maxRot = math.abs(xrot) 
+			maxRotFrame = i
+		end
+	end
+	
+	local camFOV = InCameraAoV:GetSource(maxRotFrame).Value
+	local result = CalculateFrastumCorners(camFOV, maxRot, aspectRatio, false, 1)
+	local overscan = (math.ceil(result[5]*10))/10.0
+	return overscan
 end
 
 
@@ -295,11 +382,11 @@ function PlaneLineIntersection(_plane, _line, aspectRatio)
 	
 	local t = ( _plane.n:dot(Vector3:new(0, 0, 0)) - _plane.n:dot(_line.a)) / ( _plane.n:dot( _line.direction:norm() ) )
     local inter = ( _line.a + (_line.direction:norm() * t) ):round()
-	--local res = Vector3:new(inter.x, inter.y, inter.z * 1/aspectRatio) 
 	return inter
 end
 
-function CalculateFrastumCorners(camFOV, camRotX, aspectRatio, c, rescale, overscan)
+function CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan)
+	local c = Vector3:new(0.5,0,0.5)
 	local d = 0.5 / math.tan(math.rad(camFOV/2.0))
 	local projPlane = aPlane:new( Vector3:new(0,1.0,0), 0.0 ) --projection plane
 	local h = aspectRatio/2.0
@@ -317,11 +404,11 @@ function CalculateFrastumCorners(camFOV, camRotX, aspectRatio, c, rescale, overs
 	local BRpoint = PlaneLineIntersection(projPlane, BR, aspectRatio):scale(screenSpace) * (1.0/overscan)
 	local BLpoint = PlaneLineIntersection(projPlane, BL, aspectRatio):scale(screenSpace) * (1.0/overscan)
 	
+	local shortestV = TRpoint:length() <= BRpoint:length() and TRpoint or BRpoint
+	local scale =  0.5 / math.abs(shortestV:minXZ())
+		
 	if rescale then	
 		--rescale and recenter the points
-		local shortestV = TRpoint:length() <= BRpoint:length() and TRpoint or BRpoint
-		local scale =  0.5 / math.abs(shortestV:minXZ())
-
 		TRpoint = (TRpoint * scale) + c
 		TLpoint = (TLpoint * scale) + c
 		BRpoint = (BRpoint * scale) + c
@@ -334,62 +421,94 @@ function CalculateFrastumCorners(camFOV, camRotX, aspectRatio, c, rescale, overs
 		BLpoint = BLpoint + c
 	end
 
-	return {TRpoint, TLpoint, BRpoint, BLpoint}
+	return {TRpoint, TLpoint, BRpoint, BLpoint, scale}
 end
 
-function NotifyChanged(inp, param, time)	
-		local c = Vector3:new(0.5,0,0.5)
-		
-		if inp ~= nil and param ~= nil and inp == InImage then
-			aspectRatio = param.Height/param.Width
-		end
-		
-		if inp ~= nil and param ~= nil and inp == InCameraAoV then
-			camFOV = param.Value
-		end
-		
-		if inp ~= nil and param ~= nil and inp == InOverscan then
-			overscan = param.Value
-		end
-		
-		if inp ~= nil and param ~= nil and inp == InRescale then
-			rescale = param.Value > 0 and true or false
-		end
-		
-		if inp ~= nil and param ~= nil and inp == InCameraXRot then		
-			local theta = param.Value
-			
-			-- Fusion 3D rotation is between -180 and 180,
-			-- converting to -90 and 90
-			if theta >= 0 and theta <= 90 then
-				camRotX = theta
-			elseif theta > 90 and theta <=180 then
-				camRotX = theta - 180
-			elseif theta < 0 and theta >= -90 then
-				camRotX = theta
-			elseif theta < -90 then
-				camRotX = 180 + theta
+
+function OnAddToFlow()
+	if InSetExpression:GetSource(0).Value == 0 then
+		local runScript = [=[
+		local fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
+		local comp = fusion.CurrentComp
+		local tool = comp:FindTool("]=].. self.Name..[=[")
+		tool.CameraAoV:SetExpression("self:GetSourceTool(\"Camera\").AoV")
+		tool.CameraXRotation:SetExpression("self:GetSourceTool(\"Camera\").Transform3DOp.Rotate.X")
+		]=]
+		self.Comp:Execute(runScript)
+		InSetExpression:SetAttrs({INP_Disabled = false})
+		InSetExpression:SetSource(Number(1), 0, 0)
+		InSetExpression:SetAttrs({INP_Disabled = true})
+	end 
+
+end
+
+
+function AddExpressions()
+	local runScript = [=[
+	local fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
+	local comp = fusion.CurrentComp
+	local tool = comp:FindTool("]=].. self.Name..[=[")
+	tool.CameraAoV:SetExpression("self:GetSourceTool(\"Camera\").AoV")
+	tool.CameraXRotation:SetExpression("self:GetSourceTool(\"Camera\").Transform3DOp.Rotate.X")
+	]=]
+	self.Comp:Execute(runScript)
+end
+
+function NotifyChanged(inp, param, time)
+
+		if inp ~= nil and param ~= nil then
+			--[[
+			if inp == InSetExpression then
+				if param.Value == 0 then
+					AddExpressions()
+					InSetExpression:SetAttrs({INP_Disabled = false})
+					InSetExpression:SetSource(Number(1), time)
+					InSetExpression:SetAttrs({INP_Disabled = true})
+				end
 			end
-		end
-		
-		if camFOV ~= nil and camRotX ~= nil and aspectRatio ~= nil and rescale ~= nil and overscan ~= nil then
-			local inter = CalculateFrastumCorners(camFOV, camRotX, aspectRatio, c, rescale, overscan)
+			]]
+			if  inp == InImage then
+				aspectRatio = param.OriginalHeight/param.OriginalWidth
+					
+			elseif inp == InCameraAoV then
+				camFOV = param.Value
 						
-			InTRPoint:SetAttrs({INP_Disabled = false})
-			InTRPoint:SetSource((inter[1]):toPoint(), time)
-			InTRPoint:SetAttrs({INP_Disabled = true})
+			elseif inp == InOverscan then
+				overscan = param.Value
+					
+			elseif inp == InRescale then
+				rescale = param.Value > 0 and true or false
+						
+			elseif inp == InCameraXRot then		
+				camRotX = ConvertRotationAngle(param.Value)
+			end	
+
+			if inp == InGetOverscan and param.Value > 0.5 and aspectRatio ~= nil then
+				self.Comp.Locked = true
+				local oscan = (GetOverscanFromCam(aspectRatio))
+				self.Comp.Locked = false
+				self.Comp:Execute("composition:AskUser(\"Calculated Overscan\",{{\"Msg\",Name=\"Overscan\",\"Text\",ReadOnly=true,Lines=1,Wrap=false,Default=" .. tostring(oscan) .. "}})")
+			end
 			
-			InTLPoint:SetAttrs({INP_Disabled = false})
-			InTLPoint:SetSource((inter[2]):toPoint(), time)
-			InTLPoint:SetAttrs({INP_Disabled = true})
-			
-			InBRPoint:SetAttrs({INP_Disabled = false})
-			InBRPoint:SetSource((inter[3]):toPoint(), time)
-			InBRPoint:SetAttrs({INP_Disabled = true})
-			
-			InBLPoint:SetAttrs({INP_Disabled = false})
-			InBLPoint:SetSource((inter[4]):toPoint(), time)
-			InBLPoint:SetAttrs({INP_Disabled = true})
+			if camFOV ~= nil and camRotX ~= nil and aspectRatio ~= nil and rescale ~= nil and overscan ~= nil then
+				local inter = CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan)
+							
+				InTRPoint:SetAttrs({INP_Disabled = false})
+				InTRPoint:SetSource((inter[1]):toPoint(), time)
+				InTRPoint:SetAttrs({INP_Disabled = true})
+				
+				InTLPoint:SetAttrs({INP_Disabled = false})
+				InTLPoint:SetSource((inter[2]):toPoint(), time)
+				InTLPoint:SetAttrs({INP_Disabled = true})
+				
+				InBRPoint:SetAttrs({INP_Disabled = false})
+				InBRPoint:SetSource((inter[3]):toPoint(), time)
+				InBRPoint:SetAttrs({INP_Disabled = true})
+				
+				InBLPoint:SetAttrs({INP_Disabled = false})
+				InBLPoint:SetSource((inter[4]):toPoint(), time)
+				InBLPoint:SetAttrs({INP_Disabled = true})
+			end
 		end
 end
 
@@ -397,20 +516,31 @@ end
 -- PreCalcProcess. If not implemented, only the main output will be handled,
 -- which would cause tools connected to the vanishing output to fail.
 function PreCalcProcess(req)
+	
 	-- set auxilliary output first
 	OutTLPoint:Set(req, InTLPoint:GetValue(req))
 	OutTRPoint:Set(req, InTRPoint:GetValue(req))
 	OutBLPoint:Set(req, InBLPoint:GetValue(req))
 	OutBRPoint:Set(req, InBRPoint:GetValue(req))
-
+	
 	-- output image with no data
 	local img = InImage:GetValue(req)
 	local out = Image({IMG_Like = img, IMG_NoData = true})
 	OutImage:Set(req, out)
-end
+end	
 
 
-function Process(req) 
+function Process(req)
+	--Executes fine here
+	--fusion = Fusion()
+	--comp = fusion.CurrentComp
+	--dump(_G.tool)
+	--if _G.tool == "something" or _G.tool == nil then 
+	--	_G.tool = comp:FindTool(self.Name)
+	--	dump(self.Name)
+		
+	--end
+	--dump(tool)
 	local img = InImage:GetValue(req)
 	
 	OutTLPoint:Set(req, InTLPoint:GetValue(req))
