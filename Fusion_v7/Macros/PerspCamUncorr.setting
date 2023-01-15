@@ -168,19 +168,19 @@
 							Disabled = true,
 						},
 						TopLeftPointHidden = Input {
-							Value = { -0.174848366479788, 1.32697433869066, },
+							Value = { 0, 1, },
 							Disabled = true,
 						},
 						TopRightPointHidden = Input {
-							Value = { 1.17484836647979, 1.32697433869066, },
+							Value = { 1, 1, },
 							Disabled = true,
 						},
 						BottomLeftPointHidden = Input {
-							Value = { 5.55111512312578e-017, -0.112711225044825, },
+							Value = { 0, 0, },
 							Disabled = true,
 						},
 						BottomRightPointHidden = Input {
-							Value = { 1, -0.112711225044825, },
+							Value = { 1, 0, },
 							Disabled = true,
 						},
 					},
