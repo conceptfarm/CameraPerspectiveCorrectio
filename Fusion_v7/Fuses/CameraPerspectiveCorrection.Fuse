@@ -10,8 +10,6 @@ Connect 3D camera's X Rotation to the Fuse's X Rotation
 Pipe in either Corner Positioner or Perspective Positioner tool and connected
 Top Left, Top Right, etc controls to the Fuse's Top Left, Top Right etc, outputs
 respectively
-
-
 --]]--
 
 
@@ -47,7 +45,8 @@ function Create()
 		PC_ControlGroup 		= 2,
 		PC_ControlID 			= 3,
 		INP_Default         	= 90,
-		--Expression = "self:GetSourceTool(\"Input2\").AoV",
+		INP_MinAllowed     		= 1.0,
+		INP_MaxAllowed     		= 179.0,
 		})
 	
 	InCameraXRot = self:AddInput("Camera X Rotation", "CameraXRotation", {
@@ -354,6 +353,7 @@ function aLine:new(_a, _b)
 end
 
 function aLine:rotate(theta)
+-- https://stackoverflow.com/questions/14607640/rotating-a-vector-in-3d-space
 	function rotatePointX(p, theta) 
 		local _x = p.x 
 		local _y = (p.y * math.cos(theta)) - (p.z * math.sin(theta))
@@ -374,6 +374,7 @@ end
 ----------------------------
 -- Intersection Functions --
 ----------------------------
+-- https://stackoverflow.com/questions/5666222/3d-line-plane-intersection
 function PlaneLineIntersection(_plane, _line, aspectRatio)
 	if ( _plane.n:dot(_line.direction:norm()) ) == 0 then 
         print "parallel"
@@ -393,16 +394,15 @@ function CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan
 	local screenSpace = Vector3:new(1.0,1.0,1.0/aspectRatio) -- screen space is 0 - 1 and is aspect and resolution independant
 	
 	--Frastum lines
+	--Only care about Top Right and Bottom Right because symmetrical
 	local TR = aLine:new( Vector3:new(0,d,0), Vector3:new(0.5*overscan,0,h*overscan) ):rotate(math.rad(-camRotX))
-	local TL = aLine:new( Vector3:new(0,d,0), Vector3:new(-0.5*overscan,0,h*overscan) ):rotate(math.rad(-camRotX))
 	local BR = aLine:new( Vector3:new(0,d,0), Vector3:new(0.5*overscan,0,-h*overscan) ):rotate(math.rad(-camRotX))
-	local BL = aLine:new( Vector3:new(0,d,0), Vector3:new(-0.5*overscan,0,-h*overscan) ):rotate(math.rad(-camRotX))
 	
 	--Frastum intersection with plane
 	local TRpoint = PlaneLineIntersection(projPlane, TR, aspectRatio):scale(screenSpace) * (1.0/overscan) 
-	local TLpoint = PlaneLineIntersection(projPlane, TL, aspectRatio):scale(screenSpace) * (1.0/overscan) 
 	local BRpoint = PlaneLineIntersection(projPlane, BR, aspectRatio):scale(screenSpace) * (1.0/overscan)
-	local BLpoint = PlaneLineIntersection(projPlane, BL, aspectRatio):scale(screenSpace) * (1.0/overscan)
+	local TLpoint =  Vector3:new(-TRpoint.x,0,TRpoint.z)
+	local BLpoint =  Vector3:new(-BRpoint.x,0,BRpoint.z)
 	
 	local shortestV = TRpoint:length() <= BRpoint:length() and TRpoint or BRpoint
 	local scale =  0.5 / math.abs(shortestV:minXZ())
@@ -410,8 +410,8 @@ function CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan
 	if rescale then	
 		--rescale and recenter the points
 		TRpoint = (TRpoint * scale) + c
-		TLpoint = (TLpoint * scale) + c
 		BRpoint = (BRpoint * scale) + c
+		TLpoint = (TLpoint * scale) + c
 		BLpoint = (BLpoint * scale) + c
 	else
 		--just recenter the points
@@ -439,7 +439,6 @@ function OnAddToFlow()
 		InSetExpression:SetSource(Number(1), 0, 0)
 		InSetExpression:SetAttrs({INP_Disabled = true})
 	end 
-
 end
 
 
@@ -471,7 +470,11 @@ function NotifyChanged(inp, param, time)
 				aspectRatio = param.OriginalHeight/param.OriginalWidth
 					
 			elseif inp == InCameraAoV then
-				camFOV = param.Value
+				if param.Value > 0 and param.Value < 180 then
+					camFOV = param.Value
+				else
+					camFOV = nil
+				end
 						
 			elseif inp == InOverscan then
 				overscan = param.Value
