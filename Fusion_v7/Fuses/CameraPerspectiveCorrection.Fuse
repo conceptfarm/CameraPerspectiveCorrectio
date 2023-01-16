@@ -9,7 +9,7 @@ Connect 3D camera's X Rotation to the Fuse's X Rotation
 
 Pipe in either Corner Positioner or Perspective Positioner tool and connected
 Top Left, Top Right, etc controls to the Fuse's Top Left, Top Right etc, outputs
-respectively
+respectively.
 --]]--
 
 
@@ -420,7 +420,12 @@ function CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan
 		BRpoint = BRpoint + c
 		BLpoint = BLpoint + c
 	end
-
+	
+	--Check make sure we have a valid solution
+	if TRpoint.z < BRpoint.z or TRpoint.x < TLpoint.x then
+		return {Vector3:new(1,0,1), Vector3:new(0,0,1), Vector3:new(1,0,0), Vector3:new(0,0,0), 1}
+	end
+	
 	return {TRpoint, TLpoint, BRpoint, BLpoint, scale}
 end
 
@@ -441,31 +446,10 @@ function OnAddToFlow()
 	end 
 end
 
-
-function AddExpressions()
-	local runScript = [=[
-	local fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
-	local comp = fusion.CurrentComp
-	local tool = comp:FindTool("]=].. self.Name..[=[")
-	tool.CameraAoV:SetExpression("self:GetSourceTool(\"Camera\").AoV")
-	tool.CameraXRotation:SetExpression("self:GetSourceTool(\"Camera\").Transform3DOp.Rotate.X")
-	]=]
-	self.Comp:Execute(runScript)
-end
-
 function NotifyChanged(inp, param, time)
 
 		if inp ~= nil and param ~= nil then
-			--[[
-			if inp == InSetExpression then
-				if param.Value == 0 then
-					AddExpressions()
-					InSetExpression:SetAttrs({INP_Disabled = false})
-					InSetExpression:SetSource(Number(1), time)
-					InSetExpression:SetAttrs({INP_Disabled = true})
-				end
-			end
-			]]
+
 			if  inp == InImage then
 				aspectRatio = param.OriginalHeight/param.OriginalWidth
 					
@@ -534,16 +518,6 @@ end
 
 
 function Process(req)
-	--Executes fine here
-	--fusion = Fusion()
-	--comp = fusion.CurrentComp
-	--dump(_G.tool)
-	--if _G.tool == "something" or _G.tool == nil then 
-	--	_G.tool = comp:FindTool(self.Name)
-	--	dump(self.Name)
-		
-	--end
-	--dump(tool)
 	local img = InImage:GetValue(req)
 	
 	OutTLPoint:Set(req, InTLPoint:GetValue(req))
