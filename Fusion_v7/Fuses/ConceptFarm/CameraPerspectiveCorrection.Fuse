@@ -184,28 +184,6 @@ function Create()
 		
 end
 
-function GetCameraByName(_name)
-	--tell WHO IS fusion:
-	fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
-	--..and where we are:
-	comp = fusion:GetCurrentComp()
-	 
-	-- find this tool in current comp context
-	toollist = comp:GetToolList()
-	selfTool = nil
-	for i, tool in pairs(toollist) do 
-	   if tool.Name == _name then 
-		  selfTool = tool
-		  break
-		end
-	end
-	return selfTool
-end
-
-function GetCameraAoV(_camera, _time)
-	return _camera.AoV[_time]
-end
-
 -- Fusion 3D rotation is between -180 and 180,
 -- converting to -90 and 90
 function ConvertRotationAngle(theta)
