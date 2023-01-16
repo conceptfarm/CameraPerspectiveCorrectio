@@ -1,0 +1,537 @@
+--[[--
+CameraPerspectiveCorrection.Fuse 
+
+This Fuse calculates 4 points needed to perform vertical perspective camera correction.
+
+Usage:
+Connect 3D camera's Angle of View to the Fuse's Angle
+Connect 3D camera's X Rotation to the Fuse's X Rotation
+
+Pipe in either Corner Positioner or Perspective Positioner tool and connected
+Top Left, Top Right, etc controls to the Fuse's Top Left, Top Right etc, outputs
+respectively.
+--]]--
+
+
+FuRegisterClass("CameraPerspectiveCorrection", CT_Tool, {
+	REGS_Name = "Camera Perspective Correction",
+	REGS_Category = "Fuses\\ConceptFarm",
+	REGS_OpIconString = "CamPrCr",
+	REGS_OpDescription = "Perspective Correction based on 3D camera Input",
+	REG_NoAutoProxy = true,
+	REG_NoMotionBlurCtrls = true,
+	REG_NoObjMatCtrls = true,
+	REG_NoBlendCtrls = true,
+	REG_OpNoMask = true,
+	})
+
+function Create()
+	InCamera = self:AddInput("Camera", "Camera", {
+		LINKID_DataType 		= "DataType3D",
+		LINK_Main 				= 2,
+		INP_SendRequest 		= false,
+		INP_Required 			= false,
+		INP_DoNotifyChanged 	= true,
+		INPID_InputControl 		= "ImageControl",
+		})
+		
+	InCameraAoV = self:AddInput("Camera Angle of View", "CameraAoV", {
+		LINKID_DataType 		= "Number",
+		INPID_InputControl 		= "SliderControl",
+		INP_DoNotifyChanged 	= true,
+		--INP_ForceNotify 		= true,
+		INP_External 			= true,
+		--INP_Passive 			= true,
+		PC_ControlGroup 		= 2,
+		PC_ControlID 			= 3,
+		INP_Default         	= 90,
+		INP_MinAllowed     		= 1.0,
+		INP_MaxAllowed     		= 179.0,
+		})
+	
+	InCameraXRot = self:AddInput("Camera X Rotation", "CameraXRotation", {
+		LINKID_DataType 	= "Number",
+		INPID_InputControl 	= "ScrewControl",
+		INP_DoNotifyChanged = true,
+		INP_ForceNotify		= true,
+		INP_External 		= true,
+		
+		})
+		
+	InOverscan = self:AddInput("Render Overscan", "Overscan", {
+		LINKID_DataType 	= "Number",
+		INPID_InputControl 	= "SliderControl",
+		INP_DoNotifyChanged = true,
+		INP_External 		= true,
+		INP_Default         = 1.0,
+		INP_MinAllowed     = 1.0,
+		INP_MaxScale       = 2.0,
+		})		
+	
+	InGetOverscan = self:AddInput("Get Overscan from Camera", "GetOverscan", {
+		LINKID_DataType     = "Number",
+		INPID_InputControl  = "ButtonControl",
+		INP_External        = false,
+		INP_DoNotifyChanged = true,
+		INP_InitialNotify   = false,
+		})
+	
+	InImage = self:AddInput("Input", "Input", {
+		LINKID_DataType 		= "Image",
+		LINK_Main 				= 1,
+		--INP_External 			= true,
+		INP_DoNotifyChanged 	= true,
+		})
+		
+	InRescale = self:AddInput("Rescale to full view", "Rescale", {
+		LINKID_DataType     = "Number",
+		INPID_InputControl  = "CheckboxControl",
+		INP_Default         = 0,
+		INP_DoNotifyChanged = true,
+		})		
+
+
+	OutImage = self:AddOutput("Output", "Output", {
+		LINKID_DataType 	= "Image",
+		LINK_Main 			= 1,
+		})
+	
+	-- hidden input control, only used to display crosshairs in viewer. Updated by NotifyChanged
+	
+	InSetExpression = self:AddInput("Set Expression", "SetExpression", {
+		LINKID_DataType     	= "Number",
+		INPID_InputControl  	= "CheckboxControl",
+		INP_Default         	= 0,
+		INP_DoNotifyChanged 	= true,
+		IC_Visible          	= false,
+		PC_Visible          	= false,
+		INP_External       	  	= false,	-- don't allow connections
+		INP_Passive        	  	= true,	-- doesn't affect rendering (doesn't invalidate caches)
+		INP_Disabled       	  	= true,	-- prevent user from dragging preview control
+		})	
+	
+	
+	InTLPoint = self:AddInput("Top Left", "TopLeftPointHidden", {
+		LINKID_DataType      = "Point",
+		INPID_InputControl   = "OffsetControl",
+		INPID_PreviewControl = "CrosshairControl",
+		CHC_Style            = "DiagonalCross",
+		INP_DefaultX         = 0.0,
+		INP_DefaultY         = 1.0,
+		IC_Visible           = false,
+		PC_Visible           = true,
+		INP_External         = false,	-- don't allow connections
+		INP_Passive          = true,	-- doesn't affect rendering (doesn't invalidate caches)
+		INP_Disabled         = true,	-- prevent user from dragging preview control
+		})
+	
+	InTRPoint = self:AddInput("Top Right", "TopRightPointHidden", {
+		LINKID_DataType      = "Point",
+		INPID_InputControl   = "OffsetControl",
+		INPID_PreviewControl = "CrosshairControl",
+		CHC_Style            = "DiagonalCross",
+		INP_DefaultX         = 1.0,
+		INP_DefaultY         = 1.0,
+		IC_Visible           = false,
+		PC_Visible           = true,
+		INP_External         = false,	-- don't allow connections
+		INP_Passive          = true,	-- doesn't affect rendering (doesn't invalidate caches)
+		INP_Disabled         = true,	-- prevent user from dragging preview control
+		})
+	
+	InBLPoint = self:AddInput("Bottom Left", "BottomLeftPointHidden", {
+		LINKID_DataType      = "Point",
+		INPID_InputControl   = "OffsetControl",
+		INPID_PreviewControl = "CrosshairControl",
+		CHC_Style            = "DiagonalCross",
+		INP_DefaultX         = 0.0,
+		INP_DefaultY         = 0.0,
+		IC_Visible           = false,
+		PC_Visible           = true,
+		INP_External         = false,	-- don't allow connections
+		INP_Passive          = true,	-- doesn't affect rendering (doesn't invalidate caches)
+		INP_Disabled         = true,	-- prevent user from dragging preview control
+		})
+	
+	InBRPoint = self:AddInput("Bottom Right", "BottomRightPointHidden", {
+		LINKID_DataType      = "Point",
+		INPID_InputControl   = "OffsetControl",
+		INPID_PreviewControl = "CrosshairControl",
+		CHC_Style            = "DiagonalCross",
+		INP_DefaultX         = 1.0,
+		INP_DefaultY         = 0.0,
+		IC_Visible           = false,
+		PC_Visible           = true,
+		INP_External         = false,	-- don't allow connections
+		INP_Passive          = true,	-- doesn't affect rendering (doesn't invalidate caches)
+		INP_Disabled         = true,	-- prevent user from dragging preview control
+		})
+	
+	OutTLPoint = self:AddOutput("Top Left", "TopLeftPoint", {
+		LINKID_DataType = "Point",
+		})
+	OutTRPoint = self:AddOutput("Top Right", "TopRightPoint", {
+		LINKID_DataType = "Point",
+		})
+	OutBLPoint = self:AddOutput("Bottom Left", "BottomLeftPoint", {
+		LINKID_DataType = "Point",
+		})
+	OutBRPoint = self:AddOutput("Bottom Right", "BottomRightPoint", {
+		LINKID_DataType = "Point",
+		})
+	
+
+		
+end
+
+function GetCameraByName(_name)
+	--tell WHO IS fusion:
+	fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
+	--..and where we are:
+	comp = fusion:GetCurrentComp()
+	 
+	-- find this tool in current comp context
+	toollist = comp:GetToolList()
+	selfTool = nil
+	for i, tool in pairs(toollist) do 
+	   if tool.Name == _name then 
+		  selfTool = tool
+		  break
+		end
+	end
+	return selfTool
+end
+
+function GetCameraAoV(_camera, _time)
+	return _camera.AoV[_time]
+end
+
+-- Fusion 3D rotation is between -180 and 180,
+-- converting to -90 and 90
+function ConvertRotationAngle(theta)
+	local res = theta
+	if theta >= 0 and theta <= 90 then
+		res = theta
+	elseif theta > 90 and theta <=180 then
+		res = theta - 180
+	elseif theta < 0 and theta >= -90 then
+		res = theta
+	elseif theta < -90 then
+		res = 180 + theta
+	end
+	return res
+end
+
+
+function GetOverscanFromCam(aspectRatio)
+	local startFrame = self.Comp.GlobalStart
+	local endFrame = self.Comp.GlobalEnd
+	local maxRot = 0
+	local maxRotFrame = 0
+
+	--self.Comp:Execute("a =  comp.ActiveTool")
+	--local this = self.Comp:Execute("return a")
+	--dump(this.CameraXRotation)
+	
+	--local frameList = this.CameraXRotation:GetKeyFrames()
+	--for i=0,(#frameList), 1 do
+	--	local xrot = this.CameraXRotation[frameList[i]]
+	--	if math.abs(xrot) > maxRot then 
+	--		maxRot = math.abs(xrot) 
+	--		maxRotFrame = frameList[i]
+	--	end
+	--end
+
+		
+	for i = 0, (endFrame - startFrame - 1), 1 do
+		local xrot = ConvertRotationAngle(InCameraXRot:GetSource(startFrame + i).Value)
+		if math.abs(xrot) > maxRot then 
+			maxRot = math.abs(xrot) 
+			maxRotFrame = i
+		end
+	end
+	
+	local camFOV = InCameraAoV:GetSource(maxRotFrame).Value
+	local result = CalculateFrastumCorners(camFOV, maxRot, aspectRatio, false, 1)
+	local overscan = (math.ceil(result[5]*10))/10.0
+	return overscan
+end
+
+
+-------------------
+-- Vector3 Class --
+-------------------
+local Vector3 = {} -- the table representing the class, which will double as the metatable for the instances
+Vector3.__index = Vector3 -- failed table lookups on the instances should fallback to the class table, to get methods
+
+Vector3.mt = {
+	__sub = function (v1, v2) return Vector3:new(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z) end,
+	__add = function(v1, v2) return Vector3:new(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z) end,
+	__mul = function(v, f) return Vector3:new(v.x * f, v.y * f, v.z * f) end,
+	__le = function(v1, v2) return v1:length() <= v2:length() and true or false end,
+	__tostring = function(v) return "Vector3=(" .. v.x .. "," .. v.y .. "," .. v.z .. ")" end,
+	__index = Vector3 -- redirect queries to the Vector3 table
+}
+
+function Vector3:new(_x,_y,_z)
+    local vec = {x = _x, y = _y, z = _z}
+    setmetatable(vec, Vector3.mt)
+    return vec
+end
+
+function Vector3:length()
+	return ((self.x^2 + self.y^2 + self.z^2)^(1/2))
+end
+
+function Vector3:norm()
+	local length = self:length()
+	local _x,_y,_z = self.x/length, self.y/length, self.z/length
+	return Vector3:new(_x, _y, _z)
+end
+
+function Vector3:dot(v)
+	return self.x*v.x + self.y*v.y + (self.z or 0)*(v.z or 0)
+end
+
+function Vector3:round()
+	local epsilon = 0.0000001
+    local _x = math.abs(self.x) < epsilon and 0 or self.x
+    local _y = math.abs(self.y) < epsilon and 0 or self.y
+    local _z = math.abs(self.z) < epsilon and 0 or self.z
+    return Vector3:new(_x, _y, _z)
+end
+
+function Vector3:scale(v)
+	return Vector3:new(self.x * v.x, self.y * v.y, self.z * v.z)
+end
+
+function Vector3:minXZ()
+	local res = math.abs(self.x) <= math.abs(self.z) and self.x or self.z
+	return res
+end
+
+function Vector3:toPoint()
+	return Point(self.x,self.z)
+end
+
+
+------------------
+-- aPlane Class --
+------------------
+local aPlane = {}
+aPlane.__index = aPlane
+
+aPlane.mt = {
+	__tostring = function(v) 
+		return "aPlane=(n: Vector3=(" .. v.n.x .. "," .. v.n.y .. "," .. v.n.z .. ")" .. " d: " .. v.d .. "))" end,
+	__index = aPlane -- redirect queries to the Vector3 table
+}
+
+function aPlane:new(_n, _d)
+	local _plane = {n =_n or Vector3:new(0,0,0), d =_d}
+	setmetatable(_plane, aPlane.mt)
+    return _plane
+end
+
+local aLine = {}
+aLine.__index = aLine
+
+aLine.mt = {
+	__tostring = function(v) 
+		return "aLine=(a: Vector3=(" .. v.a.x .. "," .. v.a.y .. "," .. v.a.z .. ")" .. " b: Vector3=(" .. v.b.x .. "," .. v.b.y .. "," .. v.b.z .. "))" end,
+	__index = aLine -- redirect queries to the Vector3 table
+}
+
+
+-----------------
+-- aLine Class --
+-----------------
+function aLine:new(_a, _b)
+	local _line = {a = _a or Vector3:new(0,0,0), b = _b or Vector3:new(0,0,0), direction = _b -_a or Vector3:new(0,0,0)}
+	setmetatable(_line, aLine.mt)
+	return _line
+end
+
+function aLine:rotate(theta)
+-- https://stackoverflow.com/questions/14607640/rotating-a-vector-in-3d-space
+	function rotatePointX(p, theta) 
+		local _x = p.x 
+		local _y = (p.y * math.cos(theta)) - (p.z * math.sin(theta))
+		local _z = (p.y * math.sin(theta)) + (p.z * math.cos(theta))
+		return Vector3:new(_x, _y, _z)
+	end
+	
+	function rotatePointY(p, theta)
+		local _x = (p.x * math.cos(theta)) + (p.z * math.sin(theta))
+		local _y = p.y
+		local _z = (-p.x * math.sin (theta)) + (p.z * math.cos(theta))
+		return Vector3:new(_x, _y, _z)
+	end
+	
+	return aLine:new( rotatePointX(self.a, theta), rotatePointX(self.b, theta) )
+end
+
+----------------------------
+-- Intersection Functions --
+----------------------------
+-- https://stackoverflow.com/questions/5666222/3d-line-plane-intersection
+function PlaneLineIntersection(_plane, _line, aspectRatio)
+	if ( _plane.n:dot(_line.direction:norm()) ) == 0 then 
+        print "parallel"
+		return nil
+    end
+	
+	local t = ( _plane.n:dot(Vector3:new(0, 0, 0)) - _plane.n:dot(_line.a)) / ( _plane.n:dot( _line.direction:norm() ) )
+    local inter = ( _line.a + (_line.direction:norm() * t) ):round()
+	return inter
+end
+
+function CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan)
+	local c = Vector3:new(0.5,0,0.5)
+	local d = 0.5 / math.tan(math.rad(camFOV/2.0))
+	local projPlane = aPlane:new( Vector3:new(0,1.0,0), 0.0 ) --projection plane
+	local h = aspectRatio/2.0
+	local screenSpace = Vector3:new(1.0,1.0,1.0/aspectRatio) -- screen space is 0 - 1 and is aspect and resolution independant
+	
+	--Frastum lines
+	--Only care about Top Right and Bottom Right because symmetrical
+	local TR = aLine:new( Vector3:new(0,d,0), Vector3:new(0.5*overscan,0,h*overscan) ):rotate(math.rad(-camRotX))
+	local BR = aLine:new( Vector3:new(0,d,0), Vector3:new(0.5*overscan,0,-h*overscan) ):rotate(math.rad(-camRotX))
+	
+	--Frastum intersection with plane
+	local TRpoint = PlaneLineIntersection(projPlane, TR, aspectRatio):scale(screenSpace) * (1.0/overscan) 
+	local BRpoint = PlaneLineIntersection(projPlane, BR, aspectRatio):scale(screenSpace) * (1.0/overscan)
+	local TLpoint =  Vector3:new(-TRpoint.x,0,TRpoint.z)
+	local BLpoint =  Vector3:new(-BRpoint.x,0,BRpoint.z)
+	
+	local shortestV = TRpoint:length() <= BRpoint:length() and TRpoint or BRpoint
+	local scale =  0.5 / math.abs(shortestV:minXZ())
+		
+	if rescale then	
+		--rescale and recenter the points
+		TRpoint = (TRpoint * scale) + c
+		BRpoint = (BRpoint * scale) + c
+		TLpoint = (TLpoint * scale) + c
+		BLpoint = (BLpoint * scale) + c
+	else
+		--just recenter the points
+		TRpoint = TRpoint + c
+		TLpoint = TLpoint + c
+		BRpoint = BRpoint + c
+		BLpoint = BLpoint + c
+	end
+	
+	--Check make sure we have a valid solution
+	if TRpoint.z < BRpoint.z or TRpoint.x < TLpoint.x then
+		return {Vector3:new(1,0,1), Vector3:new(0,0,1), Vector3:new(1,0,0), Vector3:new(0,0,0), 1}
+	end
+	
+	return {TRpoint, TLpoint, BRpoint, BLpoint, scale}
+end
+
+
+function OnAddToFlow()
+	if InSetExpression:GetSource(0).Value == 0 then
+		local runScript = [=[
+		local fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
+		local comp = fusion.CurrentComp
+		local tool = comp:FindTool("]=].. self.Name..[=[")
+		tool.CameraAoV:SetExpression("self:GetSourceTool(\"Camera\").AoV")
+		tool.CameraXRotation:SetExpression("self:GetSourceTool(\"Camera\").Transform3DOp.Rotate.X")
+		]=]
+		self.Comp:Execute(runScript)
+		InSetExpression:SetAttrs({INP_Disabled = false})
+		InSetExpression:SetSource(Number(1), 0, 0)
+		InSetExpression:SetAttrs({INP_Disabled = true})
+	end 
+end
+
+function NotifyChanged(inp, param, time)
+
+		if inp ~= nil and param ~= nil then
+
+			if  inp == InImage then
+				aspectRatio = param.OriginalHeight/param.OriginalWidth
+					
+			elseif inp == InCameraAoV then
+				if param.Value > 0 and param.Value < 180 then
+					camFOV = param.Value
+				else
+					camFOV = nil
+				end
+						
+			elseif inp == InOverscan then
+				overscan = param.Value
+					
+			elseif inp == InRescale then
+				rescale = param.Value > 0 and true or false
+						
+			elseif inp == InCameraXRot then		
+				camRotX = ConvertRotationAngle(param.Value)
+			end	
+
+			if inp == InGetOverscan and param.Value > 0.5 and aspectRatio ~= nil then
+				self.Comp.Locked = true
+				local oscan = (GetOverscanFromCam(aspectRatio))
+				self.Comp.Locked = false
+				self.Comp:Execute("composition:AskUser(\"Calculated Overscan\",{{\"Msg\",Name=\"Overscan\",\"Text\",ReadOnly=true,Lines=1,Wrap=false,Default=" .. tostring(oscan) .. "}})")
+			end
+			
+			if camFOV ~= nil and camRotX ~= nil and aspectRatio ~= nil and rescale ~= nil and overscan ~= nil then
+				local inter = CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan)
+							
+				InTRPoint:SetAttrs({INP_Disabled = false})
+				InTRPoint:SetSource((inter[1]):toPoint(), time)
+				InTRPoint:SetAttrs({INP_Disabled = true})
+				
+				InTLPoint:SetAttrs({INP_Disabled = false})
+				InTLPoint:SetSource((inter[2]):toPoint(), time)
+				InTLPoint:SetAttrs({INP_Disabled = true})
+				
+				InBRPoint:SetAttrs({INP_Disabled = false})
+				InBRPoint:SetSource((inter[3]):toPoint(), time)
+				InBRPoint:SetAttrs({INP_Disabled = true})
+				
+				InBLPoint:SetAttrs({INP_Disabled = false})
+				InBLPoint:SetSource((inter[4]):toPoint(), time)
+				InBLPoint:SetAttrs({INP_Disabled = true})
+			end
+		end
+end
+
+
+-- PreCalcProcess. If not implemented, only the main output will be handled,
+-- which would cause tools connected to the vanishing output to fail.
+function PreCalcProcess(req)
+	
+	-- set auxilliary output first
+	OutTLPoint:Set(req, InTLPoint:GetValue(req))
+	OutTRPoint:Set(req, InTRPoint:GetValue(req))
+	OutBLPoint:Set(req, InBLPoint:GetValue(req))
+	OutBRPoint:Set(req, InBRPoint:GetValue(req))
+	
+	-- output image with no data
+	local img = InImage:GetValue(req)
+	local out = Image({IMG_Like = img, IMG_NoData = true})
+	OutImage:Set(req, out)
+end	
+
+
+function Process(req)
+	local img = InImage:GetValue(req)
+	
+	OutTLPoint:Set(req, InTLPoint:GetValue(req))
+	OutTRPoint:Set(req, InTRPoint:GetValue(req))
+	OutBLPoint:Set(req, InBLPoint:GetValue(req))
+	OutBRPoint:Set(req, InBRPoint:GetValue(req))
+		
+	OutImage:Set(req, img)
+
+end
+
+
+
+
+
+
+
