@@ -184,28 +184,6 @@ function Create()
 		
 end
 
-function GetCameraByName(_name)
-	--tell WHO IS fusion:
-	fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
-	--..and where we are:
-	comp = fusion:GetCurrentComp()
-	 
-	-- find this tool in current comp context
-	toollist = comp:GetToolList()
-	selfTool = nil
-	for i, tool in pairs(toollist) do 
-	   if tool.Name == _name then 
-		  selfTool = tool
-		  break
-		end
-	end
-	return selfTool
-end
-
-function GetCameraAoV(_camera, _time)
-	return _camera.AoV[_time]
-end
-
 -- Fusion 3D rotation is between -180 and 180,
 -- converting to -90 and 90
 function ConvertRotationAngle(theta)
@@ -228,21 +206,7 @@ function GetOverscanFromCam(aspectRatio)
 	local endFrame = self.Comp.GlobalEnd
 	local maxRot = 0
 	local maxRotFrame = 0
-
-	--self.Comp:Execute("a =  comp.ActiveTool")
-	--local this = self.Comp:Execute("return a")
-	--dump(this.CameraXRotation)
 	
-	--local frameList = this.CameraXRotation:GetKeyFrames()
-	--for i=0,(#frameList), 1 do
-	--	local xrot = this.CameraXRotation[frameList[i]]
-	--	if math.abs(xrot) > maxRot then 
-	--		maxRot = math.abs(xrot) 
-	--		maxRotFrame = frameList[i]
-	--	end
-	--end
-
-		
 	for i = 0, (endFrame - startFrame - 1), 1 do
 		local xrot = ConvertRotationAngle(InCameraXRot:GetSource(startFrame + i).Value)
 		if math.abs(xrot) > maxRot then 
@@ -433,7 +397,7 @@ end
 function OnAddToFlow()
 	if InSetExpression:GetSource(0).Value == 0 then
 		local runScript = [=[
-		local fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
+		local fusion = bmd.scriptapp("Fusion", "localhost", bmd.getappuuid())
 		local comp = fusion.CurrentComp
 		local tool = comp:FindTool("]=].. self.Name..[=[")
 		tool.CameraAoV:SetExpression("self:GetSourceTool(\"Camera\").AoV")
