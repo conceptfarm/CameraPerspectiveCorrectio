@@ -33,6 +33,9 @@ function Create()
 		INP_Required 			= false,
 		INP_DoNotifyChanged 	= true,
 		INPID_InputControl 		= "ImageControl",
+		--INP_External       	  	= false,	-- don't allow connections
+		--INP_Passive        	  	= true,	-- doesn't affect rendering (doesn't invalidate caches)
+		--INP_Disabled       	  	= true,	-- prevent user from dragging preview control
 		})
 		
 	InCameraAoV = self:AddInput("Camera Angle of View", "CameraAoV", {
@@ -76,7 +79,7 @@ function Create()
 		INP_InitialNotify   = false,
 		})
 	
-	InImage = self:AddInput("Input", "Input", {
+	InImage = self:AddInput("ImgInput", "ImgInput", {
 		LINKID_DataType 		= "Image",
 		LINK_Main 				= 1,
 		--INP_External 			= true,
@@ -407,7 +410,7 @@ function CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan
 	return {TRpoint, TLpoint, BRpoint, BLpoint, scale}
 end
 
-
+--[[
 function OnAddToFlow()
 	if InSetExpression:GetSource(0).Value == 0 then
 		local runScript = [=[
@@ -417,71 +420,148 @@ function OnAddToFlow()
 		tool.CameraAoV:SetExpression("self:GetSourceTool(\"Camera\").AoV")
 		tool.CameraXRotation:SetExpression("self:GetSourceTool(\"Camera\").Transform3DOp.Rotate.X")
 		]=]
-		self.Comp:Execute(runScript)
+		--self.Comp:Execute(runScript)
 		InSetExpression:SetAttrs({INP_Disabled = false})
 		InSetExpression:SetSource(Number(1), 0, 0)
 		InSetExpression:SetAttrs({INP_Disabled = true})
 	end 
 end
+]]
+
+
+--[[
+-- Function for connecting outputs to corner positioner or perspective positioner
+function ConnectToCoe
+	at.Output:GetConnectedInputs()[1]:GetTool()
+end
+]]
+
+
+function OnConnected(inp, old, new)
+	local inpName = inp:GetAttr("LINKS_Name")
+	
+	if inpName == "Camera" and old ~= nil then
+		dump("disconnected")
+		
+		local runScript = [=[
+		local fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
+		local comp = fusion.CurrentComp
+		if comp == nil then 
+			dump("comp is nothing")
+		else
+			dump("dumping comp")
+			dump(comp)
+			local tool = comp:FindTool("]=].. self.Name..[=[")
+			tool.CameraAoV:ConnectTo(nil)
+			tool.CameraXRotation:ConnectTo(nil)
+		end
+		]=]
+		self.Comp:Execute(runScript)
+		
+		InSetExpression:SetAttrs({INP_Disabled = false})
+		InSetExpression:SetSource(Number(0), 0, 0)
+		InSetExpression:SetAttrs({INP_Disabled = true})
+	end
+	
+	if inpName == "Camera" and new ~= nil then
+		dump("connecting")
+		if InSetExpression:GetSource(0).Value == 0 then
+			dump("connected run script")
+			
+			local runScript = [=[
+			local fusion = eyeon.scriptapp("Fusion", "localhost", eyeon.getappuuid())
+			local comp = fusion.CurrentComp
+			if comp == nil then 
+				dump("comp is nothing")
+			else
+				dump("dumping comp")
+				dump(comp)
+				local tool = comp:FindTool("]=].. self.Name..[=[")
+				local cam = tool.Camera:GetConnectedOutput():GetTool()
+				dump(cam)
+				if cam ~= nil then
+					if cam.AoV:GetConnectedOutput() == nil then
+						cam.AoV = BezierSpline({})
+					end
+					if cam.Transform3DOp.Rotate.X:GetConnectedOutput() == nil then
+						cam.Transform3DOp.Rotate.X = BezierSpline({})
+					end
+					tool.CameraAoV:ConnectTo(cam.AoV:GetConnectedOutput())
+					tool.CameraXRotation:ConnectTo(cam.Transform3DOp.Rotate.X:GetConnectedOutput())
+				end
+			end
+			]=]
+			self.Comp:Execute(runScript)
+			
+			InSetExpression:SetAttrs({INP_Disabled = false})
+			InSetExpression:SetSource(Number(1), 0, 0)
+			InSetExpression:SetAttrs({INP_Disabled = true})
+		else
+			dump("connecting abort")
+		end
+		
+
+	end
+	dump("-----")
+end
 
 function NotifyChanged(inp, param, time)
 
-		if inp ~= nil and param ~= nil then
+	if inp ~= nil and param ~= nil then
 
-			if  inp == InImage then
-				aspectRatio = param.OriginalHeight/param.OriginalWidth
+		if  inp == InImage then
+			aspectRatio = param.OriginalHeight/param.OriginalWidth
+				
+		elseif inp == InCameraAoV then
+			if param.Value > 0 and param.Value < 180 then
+				camFOV = param.Value
+			else
+				camFOV = nil
+			end
 					
-			elseif inp == InCameraAoV then
-				if param.Value > 0 and param.Value < 180 then
-					camFOV = param.Value
-				else
-					camFOV = nil
-				end
-						
-			elseif inp == InOverscan then
-				overscan = param.Value
+		elseif inp == InOverscan then
+			overscan = param.Value
+				
+		elseif inp == InRescale then
+			rescale = param.Value > 0 and true or false
 					
-			elseif inp == InRescale then
-				rescale = param.Value > 0 and true or false
-						
-			elseif inp == InCameraXRot then		
-				camRotX = ConvertRotationAngle(param.Value)
-			end	
+		elseif inp == InCameraXRot then		
+			camRotX = ConvertRotationAngle(param.Value)
+		end	
 
-			if inp == InGetOverscan and param.Value > 0.5 and aspectRatio ~= nil then
-				self.Comp.Locked = true
-				local oscan = (GetOverscanFromCam(aspectRatio))
-				self.Comp.Locked = false
-				self.Comp:Execute("composition:AskUser(\"Calculated Overscan\",{{\"Msg\",Name=\"Overscan\",\"Text\",ReadOnly=true,Lines=1,Wrap=false,Default=" .. tostring(oscan) .. "}})")
-			end
-			
-			if camFOV ~= nil and camRotX ~= nil and aspectRatio ~= nil and rescale ~= nil and overscan ~= nil then
-				local inter = CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan)
-							
-				InTRPoint:SetAttrs({INP_Disabled = false})
-				InTRPoint:SetSource((inter[1]):toPoint(), time)
-				InTRPoint:SetAttrs({INP_Disabled = true})
-				
-				InTLPoint:SetAttrs({INP_Disabled = false})
-				InTLPoint:SetSource((inter[2]):toPoint(), time)
-				InTLPoint:SetAttrs({INP_Disabled = true})
-				
-				InBRPoint:SetAttrs({INP_Disabled = false})
-				InBRPoint:SetSource((inter[3]):toPoint(), time)
-				InBRPoint:SetAttrs({INP_Disabled = true})
-				
-				InBLPoint:SetAttrs({INP_Disabled = false})
-				InBLPoint:SetSource((inter[4]):toPoint(), time)
-				InBLPoint:SetAttrs({INP_Disabled = true})
-			end
+		if inp == InGetOverscan and param.Value > 0.5 and aspectRatio ~= nil then
+			self.Comp.Locked = true
+			local oscan = (GetOverscanFromCam(aspectRatio))
+			self.Comp.Locked = false
+			self.Comp:Execute("composition:AskUser(\"Calculated Overscan\",{{\"Msg\",Name=\"Overscan\",\"Text\",ReadOnly=true,Lines=1,Wrap=false,Default=" .. tostring(oscan) .. "}})")
 		end
+		
+		if camFOV ~= nil and camRotX ~= nil and aspectRatio ~= nil and rescale ~= nil and overscan ~= nil then
+			local inter = CalculateFrastumCorners(camFOV, camRotX, aspectRatio, rescale, overscan)
+						
+			InTRPoint:SetAttrs({INP_Disabled = false})
+			InTRPoint:SetSource((inter[1]):toPoint(), time)
+			InTRPoint:SetAttrs({INP_Disabled = true})
+			
+			InTLPoint:SetAttrs({INP_Disabled = false})
+			InTLPoint:SetSource((inter[2]):toPoint(), time)
+			InTLPoint:SetAttrs({INP_Disabled = true})
+			
+			InBRPoint:SetAttrs({INP_Disabled = false})
+			InBRPoint:SetSource((inter[3]):toPoint(), time)
+			InBRPoint:SetAttrs({INP_Disabled = true})
+			
+			InBLPoint:SetAttrs({INP_Disabled = false})
+			InBLPoint:SetSource((inter[4]):toPoint(), time)
+			InBLPoint:SetAttrs({INP_Disabled = true})
+		end
+	end
 end
 
 
 -- PreCalcProcess. If not implemented, only the main output will be handled,
 -- which would cause tools connected to the vanishing output to fail.
 function PreCalcProcess(req)
-	
 	-- set auxilliary output first
 	OutTLPoint:Set(req, InTLPoint:GetValue(req))
 	OutTRPoint:Set(req, InTRPoint:GetValue(req))
